@@ -168,10 +168,10 @@ export default function CollegeOnboarding({
 
   useEffect(() => {
     const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
-    if (userEmail && currentStep >= 2 && hasCreatedRecord) {
+    if (userEmail && currentStep >= 2) {
       fetchCollegeData(userEmail);
     }
-  }, [currentStep, currentUser, hasCreatedRecord]);
+  }, [currentStep, currentUser]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -347,8 +347,10 @@ export default function CollegeOnboarding({
         `${BASE_URL}method/stridenex_app.api_stridenex_app.college.college.get_college?email=${encodeURIComponent(email)}`
       );
 
-      const resData = response.data?.data || response.data?.message?.data || response.data?.message || response.data;
+      const messageObj = response.data?.data || response.data?.message?.data || response.data?.message || response.data;
+      const resData = Array.isArray(messageObj) ? messageObj[0] : messageObj;
       if (resData && (resData.college_name || resData.email)) {
+        setHasCreatedRecord(true);
         setFormData(prev => ({
           ...prev,
           college_name: resData.college_name || prev.college_name,
@@ -882,18 +884,29 @@ export default function CollegeOnboarding({
     setCurrentStep(1);
     setSuccess("");
     setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const goToStep2 = () => {
     setCurrentStep(2);
     setSuccess("");
     setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
+    if (userEmail) {
+      fetchCollegeData(userEmail);
+    }
   };
 
   const goToStep3 = () => {
     setCurrentStep(3);
     setSuccess("");
     setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
+    if (userEmail) {
+      fetchCollegeData(userEmail);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -161,14 +161,14 @@ export default function IndustryOnboarding({
 
     // Fetch industry data whenever the user lands on step 2, 3, or 4
     useEffect(() => {
-        const userEmail = localStorage.getItem("userEmail") || currentUser || "";
+        const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
         if (userEmail && currentStep >= 2) {
             fetchIndustryData(userEmail);
         }
         if (userEmail && currentStep === 4) {
             fetchUserDetails(userEmail);
         }
-    }, [currentStep, currentUser]);
+    }, [currentStep, currentUser, formData.email]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -194,43 +194,60 @@ export default function IndustryOnboarding({
         setLoading(true);
         try {
             const response = await axios.get(`${BASE_URL}method/stridenex_app.api_stridenex_app.industry.industry.get_industry_by_name?email=${email}`);
-            if (response.data?.message) {
-                const messageObj = response.data.message;
-                const data = messageObj.data || messageObj; // Handle both direct and nested data
+            if (response.data) {
+                const messageObj = response.data?.message || response.data;
+                let rawData = messageObj?.data !== undefined ? messageObj.data : messageObj;
+                if (Array.isArray(rawData)) {
+                    rawData = rawData[0];
+                }
+                const data = rawData;
 
-                if (data) {
+                if (data && typeof data === 'object') {
+                    if (data.company_name || data.name) {
+                        setHasCreatedRecord(true);
+                    }
                     // Map data to formData
                     setFormData(prev => ({
                         ...prev,
-                        company_name: data.company_name || "",
-                        business_type: data.business_type || data.other_business_type || "",
-                        gst_number: data.gst_number || "",
-                        industry_sector: data.industry_sector || data.other_industry_sector || "",
-                        employee_head_count: data.employee_head_count?.toString() || "",
-                        internship_per_year: data.internship_per_year?.toString() || "",
-                        average_fresher_recruited_per_year: data.average_fresher_recruited_per_year?.toString() || "",
-                        country: data.country || "India",
-                        state: data.state || "",
-                        district: data.district || "",
-                        tahsil: data.tahsil || "", // Key matches the response (tahsil)
-                        city: data.city || "",
-                        turn_over_in_cr: data.turn_over_in_cr?.toString() || "",
-                        company_website: data.company_website || "",
-                        address_line_1: data.address_line_1 || data.address_line_1 || "",
-                        address_line2: data.address_line_2 || data.address_line2 || "",
-                        pincode: data.pincode || "",
-                        job_function: (data.job_functions || data.job_function || []).map((jf: any) => jf.job_function) // Key is singular job_function
+                        company_name: data.company_name || data.name || prev.company_name || "",
+                        business_type: data.business_type || data.other_business_type || prev.business_type || "",
+                        gst_number: data.gst_number || prev.gst_number || "",
+                        industry_sector: data.industry_sector || data.other_industry_sector || prev.industry_sector || "",
+                        employee_head_count: (data.employee_head_count !== undefined && data.employee_head_count !== null && data.employee_head_count !== "")
+                            ? String(data.employee_head_count)
+                            : (prev.employee_head_count || ""),
+                        internship_per_year: (data.internship_per_year !== undefined && data.internship_per_year !== null && data.internship_per_year !== "")
+                            ? String(data.internship_per_year)
+                            : (prev.internship_per_year || ""),
+                        average_fresher_recruited_per_year: (data.average_fresher_recruited_per_year !== undefined && data.average_fresher_recruited_per_year !== null && data.average_fresher_recruited_per_year !== "")
+                            ? String(data.average_fresher_recruited_per_year)
+                            : (prev.average_fresher_recruited_per_year || ""),
+                        country: data.country || prev.country || "India",
+                        state: data.state || prev.state || "",
+                        district: data.district || prev.district || "",
+                        tahsil: data.tahsil || data.taluka || prev.tahsil || "",
+                        city: data.city || prev.city || "",
+                        turn_over_in_cr: (data.turn_over_in_cr !== undefined && data.turn_over_in_cr !== null && data.turn_over_in_cr !== "")
+                            ? String(data.turn_over_in_cr)
+                            : (prev.turn_over_in_cr || ""),
+                        company_website: data.company_website || prev.company_website || "",
+                        address_line_1: data.location?.address_line_1 || data.address_line_1 || prev.address_line_1 || "",
+                        address_line2: data.location?.address_line_2 || data.address_line_2 || data.address_line2 || prev.address_line2 || "",
+                        pincode: data.location?.pincode || data.pincode || prev.pincode || "",
+                        job_function: (data.job_functions || data.job_function || []).length > 0
+                            ? (data.job_functions || data.job_function || []).map((jf: any) => typeof jf === 'string' ? jf : (jf.job_function || jf.name || "")).filter(Boolean)
+                            : prev.job_function
                     }));
 
                     // Map contact persons
-                    if (data.contact_details && data.contact_details.length > 0) {
+                    if (data.contact_details && Array.isArray(data.contact_details) && data.contact_details.length > 0) {
                         setContactPersons(data.contact_details.map((cp: any, index: number) => ({
                             title: cp.title || "",
                             first_name: cp.first_name || "",
                             last_name: cp.last_name || "",
                             designation: cp.designation || "",
-                            contact_no: cp.contact_no?.replace(/^\+91-/, '') || "",
-                            is_admin: index === 0 ? true : cp.is_admin === 1,
+                            contact_no: cp.contact_no ? cp.contact_no.replace(/^\+91-/, '') : "",
+                            is_admin: index === 0 ? true : (cp.is_admin === 1 || cp.is_admin === true),
                             email: cp.email || ""
                         })));
                     }
@@ -857,18 +874,29 @@ export default function IndustryOnboarding({
         setCurrentStep(1);
         setSuccess("");
         setError("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
     const goToStep2 = () => {
         setCurrentStep(2);
         setSuccess("");
         setError("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
+        if (userEmail) {
+            fetchIndustryData(userEmail);
+        }
     };
 
     const goToStep3 = () => {
         setCurrentStep(3);
         setSuccess("");
         setError("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        const userEmail = localStorage.getItem("userEmail") || currentUser || formData.email || "";
+        if (userEmail) {
+            fetchIndustryData(userEmail);
+        }
     };
 
     const getStepTitle = () => {

@@ -193,15 +193,18 @@ export default function MentorOnboarding({
     } else if (flag === 1) {
       setCurrentStep(2);
       setCompletedSteps(new Set([1]));
-      setHasCreatedRecord(true);
+      setHasCreatedRecord(false);
     }
 
     const userEmail =
       localStorage.getItem("userEmail") || currentUser || "";
-    if (userEmail) {
+    const savedMobile =
+      localStorage.getItem("userMobileNo") || localStorage.getItem("mobileNo") || "";
+    if (userEmail || savedMobile) {
       setFormData(prev => ({
         ...prev,
-        email: userEmail,
+        email: userEmail || prev.email,
+        mobileNo: prev.mobileNo || savedMobile,
         emailVerified: flag >= 1 ? true : prev.emailVerified,
         mobileVerified: flag >= 1 ? true : prev.mobileVerified,
         address_line1: prev.address_line1 || localStorage.getItem("userAddressLine1") || "",
@@ -217,11 +220,11 @@ export default function MentorOnboarding({
 
   useEffect(() => {
     const userEmail =
-      localStorage.getItem("userEmail") || currentUser || "";
+      localStorage.getItem("userEmail") || currentUser || formData.email || "";
     if (userEmail && currentStep >= 2) {
       fetchMentorData(userEmail);
     }
-  }, [currentStep, currentUser]);
+  }, [currentStep, currentUser, formData.email]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // FETCH PLATFORMS on mount
@@ -325,40 +328,57 @@ export default function MentorOnboarding({
   };
 
   const fetchMentorData = async (email: string) => {
+    if (!email) return;
     setLoading(true);
     try {
       const response = await axios.post(
         `${BASE_URL}method/stridenex_app.api_stridenex_app.mentor.mentor.get_mentor_by_email`,
         { email_id: email }
       );
-      if (response.data?.message) {
-        const messageObj = response.data.message;
-        const data = messageObj.data || messageObj;
-        if (data) {
+      if (response.data) {
+        const messageObj = response.data?.message || response.data;
+        let rawData = messageObj?.data !== undefined ? messageObj.data : messageObj;
+        if (Array.isArray(rawData)) {
+          rawData = rawData[0];
+        }
+        const data = rawData;
+        if (data && typeof data === 'object' && (data.name || data.email_id || data.first_name)) {
+          setHasCreatedRecord(true);
+          const fetchedMobile = data.mobile_no ? data.mobile_no.replace(/^\+91-?/, "") : "";
+          if (fetchedMobile) {
+            localStorage.setItem("userMobileNo", fetchedMobile);
+          }
           setFormData(prev => ({
             ...prev,
-            first_name: data.first_name || "",
-            last_name: data.last_name || "",
-            type: data.type || "",
-            country: data.country || "India",
-            state: data.state || "",
-            district: data.district || "",
-            tahsil: data.tahsil || "",
-            city: data.city || "",
-            travelling_possible: data.travelling_possible || "Yes",
-            domain: (data.domains || []).map((d: any) => d.domain),
-            skills: (data.skills || data.mentor_skills || []).map(
-              (s: any) => s.skill
-            ),
-            profile_description: data.profile_description || "",
-            bank_name: data.bank_name || "",
-            account_number: data.account_number || "",
-            ifsc_code: data.ifsc_code || "",
-            address_line1: prev.address_line1 || localStorage.getItem("userAddressLine1") || "",
-            address_line2: prev.address_line2 || localStorage.getItem("userAddressLine2") || "",
-            pincode: prev.pincode || localStorage.getItem("userPincode") || "",
-            has_gst: data.has_gst === 1 || data.has_gst === true || false,
-            gstin: data.gstin || ""
+            first_name: data.first_name || prev.first_name || "",
+            last_name: data.last_name || prev.last_name || "",
+            mobileNo: fetchedMobile || prev.mobileNo || localStorage.getItem("userMobileNo") || "",
+            type: data.type || prev.type || "",
+            country: data.country || prev.country || "India",
+            state: data.state || prev.state || "",
+            district: data.district || prev.district || "",
+            tahsil: data.tahsil || prev.tahsil || "",
+            city: data.city || prev.city || "",
+            travelling_possible: data.travelling_possible || prev.travelling_possible || "Yes",
+            domain: (
+              (data.domains || data.domain || []).map((d: any) => d.domain || d)
+            ).length > 0
+              ? (data.domains || data.domain || []).map((d: any) => d.domain || d)
+              : prev.domain,
+            skills: (
+              (data.skills || data.mentor_skills || []).map((s: any) => s.skill || s)
+            ).length > 0
+              ? (data.skills || data.mentor_skills || []).map((s: any) => s.skill || s)
+              : prev.skills,
+            profile_description: data.profile_description || prev.profile_description || "",
+            bank_name: data.bank_name || prev.bank_name || "",
+            account_number: data.account_number || prev.account_number || "",
+            ifsc_code: data.ifsc_code || prev.ifsc_code || "",
+            address_line1: data.address_line1 || prev.address_line1 || localStorage.getItem("userAddressLine1") || "",
+            address_line2: data.address_line2 || prev.address_line2 || localStorage.getItem("userAddressLine2") || "",
+            pincode: data.pincode || prev.pincode || localStorage.getItem("userPincode") || "",
+            has_gst: data.has_gst === 1 || data.has_gst === true || prev.has_gst || false,
+            gstin: data.gstin || prev.gstin || ""
           }));
 
           if (
@@ -367,8 +387,8 @@ export default function MentorOnboarding({
           ) {
             setPlatformUrls(
               data.mentor_platform_urls.map((url: any) => ({
-                platform: url.platform,
-                url: url.url
+                platform: url.platform || "",
+                url: url.url || ""
               }))
             );
           }
@@ -590,9 +610,10 @@ export default function MentorOnboarding({
       if (
         successMessages.includes(responseMessage) || isSuccess
       ) {
-        setFormData(prev => ({ ...prev, mobileVerified: true }));
+        const verifiedMobile = (formData.mobileNo || "").replace(/\D/g, "").slice(0, 10);
+        setFormData(prev => ({ ...prev, mobileNo: verifiedMobile, mobileVerified: true }));
         setSuccess("Mobile verified successfully");
-        localStorage.setItem("userMobileNo", formData.mobileNo);
+        localStorage.setItem("userMobileNo", verifiedMobile);
         // Clear any stale mobile field error
         setFieldErrors(prev => {
           const e = { ...prev };
@@ -655,6 +676,14 @@ export default function MentorOnboarding({
     if (!formData.travelling_possible)
       errors.travelling_possible =
         "Travelling possible is required";
+
+    const rawMobile = formData.mobileNo || localStorage.getItem("userMobileNo") || localStorage.getItem("mobileNo") || "";
+    const cleanMobile = rawMobile.replace(/\D/g, "");
+    if (!cleanMobile || cleanMobile.length !== 10) {
+      setError("Mobile number is required. Please verify your mobile number in Step 1.");
+      return false;
+    }
+
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -704,7 +733,68 @@ export default function MentorOnboarding({
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Build the shared update payload used for step 2 and step 3.
+   * Build the payload for creating a new Mentor record on initial Step 2 submission (POST).
+   * Populates all personal, professional, location, domain, and platform fields filled in Step 2.
+   */
+  const buildCreatePayload = (userEmail: string) => {
+    const domainArray = (formData.domain || []).map(
+      (domain: string) => ({ domain })
+    );
+    const skillsArray = (formData.skills || []).map(
+      (skill: string) => ({ skill })
+    );
+    const validPlatformUrls = platformUrls.filter(
+      p => p.platform && p.url && p.url.trim()
+    );
+    const platformUrlsArray = validPlatformUrls.map(p => ({
+      platform: p.platform,
+      url: p.url.trim()
+    }));
+    const rawMobile = formData.mobileNo || localStorage.getItem("userMobileNo") || localStorage.getItem("mobileNo") || "";
+    const cleanMobile = rawMobile.replace(/\D/g, "");
+    const formattedMobile =
+      cleanMobile && cleanMobile.length === 10
+        ? `+91-${cleanMobile}`
+        : (cleanMobile ? `+91-${cleanMobile}` : (rawMobile ? (rawMobile.startsWith("+91-") ? rawMobile : `+91-${rawMobile}`) : ""));
+
+    return {
+      email_id: userEmail,
+      first_name:
+        formData.first_name ||
+        localStorage.getItem("userFirstName") ||
+        "Test",
+      last_name:
+        formData.last_name ||
+        localStorage.getItem("userLastName") ||
+        "User",
+      mobile_no: formattedMobile || null,
+      type: formData.type || null,
+      country: formData.country || "India",
+      state: formData.state || null,
+      district: formData.district || null,
+      tahsil: formData.tahsil || null,
+      city: formData.city || null,
+      travelling_possible: formData.travelling_possible || "Yes",
+      approved_status: "Pending",
+      is_active: 1,
+      domain: domainArray,
+      domains: domainArray,
+      mentor_skills: skillsArray,
+      skills: skillsArray,
+      mentor_platform_urls: platformUrlsArray,
+      bank_name: formData.bank_name?.trim() || null,
+      account_number: formData.account_number?.trim() || null,
+      ifsc_code: formData.ifsc_code?.trim() || null,
+      profile_description:
+        formData.profile_description?.trim() || null,
+      has_gst: formData.has_gst ? 1 : 0,
+      gstin: formData.has_gst ? formData.gstin?.toUpperCase()?.trim() || "" : ""
+      // ⚠️ terms_accepted deliberately excluded — server throws 500
+    };
+  };
+
+  /**
+   * Build the shared update payload used for step 2 and step 3 updates (PUT).
    * IMPORTANT: `terms_accepted` is intentionally OMITTED from all payloads
    * because the server's Mentor doctype does not expose that attribute and
    * sending it triggers a 500 "has no attribute 'terms_accepted'" error.
@@ -723,22 +813,23 @@ export default function MentorOnboarding({
       platform: p.platform,
       url: p.url.trim()
     }));
-    const cleanMobile = formData.mobileNo.replace(/\D/g, "");
+    const rawMobile = formData.mobileNo || localStorage.getItem("userMobileNo") || localStorage.getItem("mobileNo") || "";
+    const cleanMobile = rawMobile.replace(/\D/g, "");
     const formattedMobile =
       cleanMobile && cleanMobile.length === 10
         ? `+91-${cleanMobile}`
-        : "";
+        : (cleanMobile ? `+91-${cleanMobile}` : (rawMobile ? (rawMobile.startsWith("+91-") ? rawMobile : `+91-${rawMobile}`) : ""));
 
     return {
       name: userEmail,
       email_id: userEmail,
       first_name:
-        localStorage.getItem("userFirstName") ||
         formData.first_name ||
+        localStorage.getItem("userFirstName") ||
         "Test",
       last_name:
-        localStorage.getItem("userLastName") ||
         formData.last_name ||
+        localStorage.getItem("userLastName") ||
         "User",
       mobile_no: formattedMobile || null,
       type: formData.type || null,
@@ -760,7 +851,9 @@ export default function MentorOnboarding({
       doctype: "Mentor",
       mentor_platform_urls: platformUrlsArray,
       domain: domainArray,
+      domains: domainArray,
       mentor_skills: skillsArray,
+      skills: skillsArray,
       has_gst: formData.has_gst ? 1 : 0,
       gstin: formData.has_gst ? formData.gstin?.toUpperCase()?.trim() || "" : ""
       // ⚠️  terms_accepted deliberately excluded — server throws 500
@@ -786,54 +879,17 @@ export default function MentorOnboarding({
         localStorage.getItem("userEmail") ||
         "";
 
-      // Determine whether the mentor record already exists on the server.
-      const flag = parseInt(isOnboarded || "0", 10);
-      const recordExists = flag >= 1 || hasCreatedRecord;
-
       let endpoint: string;
       let method: "post" | "put" = "post";
       let payload: any;
 
-      if (step === 2 && !recordExists) {
-        // ── First time at step 2: CREATE the mentor record ──────────────────
-        const cleanMobile = formData.mobileNo.replace(/\D/g, "");
-        const formattedMobile = `+91-${cleanMobile}`;
-
+      if (step === 2 && !hasCreatedRecord) {
+        // ── First time at step 2: CREATE the mentor record via POST ──────────
         endpoint = `${BASE_URL}method/stridenex_app.api_stridenex_app.mentor.mentor.create_mentor`;
         method = "post";
-        payload = {
-          email_id: userEmail,
-          first_name:
-            localStorage.getItem("userFirstName") ||
-            formData.first_name ||
-            "Test",
-          last_name:
-            localStorage.getItem("userLastName") ||
-            formData.last_name ||
-            "User",
-          mobile_no: formattedMobile,
-          type: "",
-          country: "India",
-          state: "",
-          district: "",
-          tahsil: "",
-          city: "",
-          travelling_possible: "Yes",
-          approved_status: "Pending",
-          is_active: 1,
-          domains: [],
-          skills: [],
-          mentor_platform_urls: [],
-          bank_name: "",
-          account_number: "",
-          ifsc_code: "",
-          profile_description: "",
-          has_gst: formData.has_gst ? 1 : 0,
-          gstin: formData.has_gst ? formData.gstin?.toUpperCase()?.trim() || "" : ""
-          // ⚠️  terms_accepted deliberately excluded
-        };
+        payload = buildCreatePayload(userEmail);
       } else {
-        // ── Update the existing mentor record ────────────────────────────────
+        // ── Update the existing mentor record via PUT ────────────────────────
         endpoint = `${BASE_URL}method/stridenex_app.api_stridenex_app.mentor.mentor.update_mentor?email_id=${encodeURIComponent(userEmail)}`;
         method = "put";
         payload = buildUpdatePayload(userEmail);
@@ -851,11 +907,15 @@ export default function MentorOnboarding({
         response.status === 200 &&
         (internalStatus === 200 ||
           internalStatus === undefined ||
-          internalStatus === "success");
+          internalStatus === "success" ||
+          response.data?.message === "Mentor created successfully" ||
+          response.data?.message?.message === "Mentor created successfully" ||
+          response.data?.message === "Mentor updated successfully" ||
+          response.data?.message?.message === "Mentor updated successfully");
 
       if (isSuccess) {
         setCompletedSteps(prev => new Set([...prev, step]));
-        if (method === "post") setHasCreatedRecord(true);
+        setHasCreatedRecord(true);
 
         if (step === 2) {
           if (formData.address_line1) {
@@ -874,6 +934,8 @@ export default function MentorOnboarding({
           setCurrentStep(3);
           setSuccess("Step 2 saved successfully!");
           window.scrollTo({ top: 0, behavior: "smooth" });
+          // Fetch saved mentor data to fill details for step 3
+          fetchMentorData(userEmail);
         } else if (step === 3) {
           /**
            * ONBOARDING COMPLETE - NEW FLOW
@@ -974,107 +1036,36 @@ export default function MentorOnboarding({
   // ─────────────────────────────────────────────────────────────────────────────
   // STEP 1 → STEP 2 TRANSITION
   //
-  // After both OTPs are verified we create the mentor record immediately
-  // (same as before), but we now guard against double-submission with the
-  // `loading` flag.
+  // After email & mobile verification on Step 1, advance to Step 2.
+  // Mentor record creation (POST) happens when proceeding from Step 2 to Step 3.
   // ─────────────────────────────────────────────────────────────────────────────
 
   const handleContinueToStep2 = async () => {
     if (!validateStep1()) return;
     if (loading) return;
 
-    // If the record was already created (e.g. flag=1 on re-visit) just
-    // advance the UI step without another API call.
-    const flag = parseInt(isOnboarded || "0", 10);
-    if (flag >= 1 || hasCreatedRecord) {
-      setCurrentStep(2);
-      setSuccess("");
-      setError("");
-      return;
+    const mob = (formData.mobileNo || localStorage.getItem("userMobileNo") || "").replace(/\D/g, "").slice(0, 10);
+    if (mob) {
+      localStorage.setItem("userMobileNo", mob);
+      setFormData(prev => ({ ...prev, mobileNo: mob, mobileVerified: true }));
     }
-
-    setLoading(true);
-    setError("");
+    if (typeof updateOnboardedFlag === "function") {
+      updateOnboardedFlag("1");
+    }
+    localStorage.setItem("isOnboarded", "1");
+    setCompletedSteps(prev => new Set([...prev, 1]));
+    setCurrentStep(2);
     setSuccess("");
+    setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
 
-    try {
-      const userEmail =
-        formData.email ||
-        currentUser ||
-        localStorage.getItem("userEmail") ||
-        "";
-      const cleanMobile = formData.mobileNo.replace(/\D/g, "");
-      const formattedMobile = `+91-${cleanMobile}`;
-
-      const payload = {
-        email_id: userEmail,
-        first_name:
-          localStorage.getItem("userFirstName") ||
-          formData.first_name ||
-          "Test",
-        last_name:
-          localStorage.getItem("userLastName") ||
-          formData.last_name ||
-          "User",
-        mobile_no: formattedMobile,
-        type: "",
-        country: "India",
-        state: "",
-        district: "",
-        tahsil: "",
-        city: "",
-        travelling_possible: "Yes",
-        approved_status: "Pending",
-        is_active: 1,
-        domains: [],
-        skills: [],
-        mentor_platform_urls: [],
-        bank_name: "",
-        account_number: "",
-        ifsc_code: "",
-        profile_description: "",
-        has_gst: formData.has_gst ? 1 : 0,
-        gstin: formData.has_gst ? formData.gstin?.toUpperCase()?.trim() || "" : ""
-        // ⚠️  terms_accepted deliberately excluded
-      };
-
-      const response = await axios.post(
-        `${BASE_URL}method/stridenex_app.api_stridenex_app.mentor.mentor.create_mentor`,
-        payload,
-        { headers: { "Content-Type": "application/json" } }
-      );
-
-      const internalStatus = response.data?.message?.status;
-      const isSuccess =
-        response.status === 200 &&
-        (internalStatus === 200 ||
-          internalStatus === undefined ||
-          internalStatus === "success");
-
-      if (isSuccess) {
-        setHasCreatedRecord(true);
-        if (typeof updateOnboardedFlag === "function") {
-          updateOnboardedFlag("1");
-        }
-        localStorage.setItem("isOnboarded", "1");
-        setSuccess(
-          "Contact verified. Proceeding to location details."
-        );
-        setCurrentStep(2);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        setError(parseServerError(response.data));
-      }
-    } catch (err: any) {
-      setError(
-        parseAxiosError(
-          err,
-          "Error creating mentor. Please check your connection and try again."
-        )
-      );
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } finally {
-      setLoading(false);
+    const userEmail =
+      formData.email ||
+      currentUser ||
+      localStorage.getItem("userEmail") ||
+      "";
+    if (userEmail) {
+      fetchMentorData(userEmail);
     }
   };
 
@@ -1089,6 +1080,8 @@ export default function MentorOnboarding({
 
   // ─────────────────────────────────────────────────────────────────────────────
   // BACK NAVIGATION
+  // When user navigates back to previous step, auto-fetch already saved data
+  // using GET API (get_mentor_by_email).
   // ─────────────────────────────────────────────────────────────────────────────
 
   const goToStep = (step: Step) => {
@@ -1096,6 +1089,13 @@ export default function MentorOnboarding({
     setSuccess("");
     setError("");
     setFieldErrors({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    const userEmail =
+      localStorage.getItem("userEmail") || currentUser || formData.email || "";
+    if (userEmail && step >= 2) {
+      fetchMentorData(userEmail);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1608,7 +1608,11 @@ export default function MentorOnboarding({
           initialValues={formData}
           errors={fieldErrors}
           onChange={data => {
-            setFormData(prev => ({ ...prev, ...data }));
+            setFormData(prev => ({
+              ...prev,
+              ...data,
+              mobileNo: prev.mobileNo || localStorage.getItem("userMobileNo") || ""
+            }));
             const updatedErrors = { ...fieldErrors };
             Object.keys(data).forEach(
               key => delete updatedErrors[key]
